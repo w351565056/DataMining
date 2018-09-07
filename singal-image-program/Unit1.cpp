@@ -1,0 +1,1075 @@
+//---------------------------------------------------------------------------
+
+#include <vcl.h>
+#pragma hdrstop
+#include<math.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<cstring>
+
+#define INIT_SIZE 10000 //存储空间初始分配量
+#define INCREMENT 10  //存储空间分配增量
+static int LINE;
+static int SAMPLE;
+static int nodeID;
+static int toClass;
+static int nowClass;
+static int spoint;
+static int file_type;
+static AnsiString name;
+static AnsiString netname;
+static AnsiString outname;
+static int node[2600][2600];
+static int af[2600][2600];
+
+//生成节点网络文件所需参数
+static int flag_max=0;
+static AnsiString netoutname;
+static int adjacent[1000][1000]={0}; //数组的范围应该大于等于最大值+5 ？？（是因为类别为1-4？）
+static int adjacent_right[1000][1000]={0};
+static int sideNum=0;
+FILE *fp5;
+
+
+
+#include "Unit1.h"
+
+//边缘点判断所需形参
+typedef struct{
+         int r; //迷宫中r行c列的位置             //!!!!!!敲黑板！！因为读取输出像素点是xy格式的，所以maze.adr[列值][行值]
+         int c;
+}PostType;
+
+typedef struct{
+         PostType seat;//当前坐标
+         int  di;       //往下一坐标的方向
+}SElemType;       //栈内元素类型
+
+typedef struct{
+         SElemType* base;
+         SElemType* top;
+         int stackSize;
+}Stack;             //栈类型
+
+void InitStack(Stack &S){  //构造空栈S
+         S.base=(SElemType*)malloc(INIT_SIZE *sizeof(SElemType));
+         if(!S.base)
+                   exit(OVERFLOW);//存储分配失败
+         S.top=S.base;
+         S.stackSize=INIT_SIZE;
+
+}
+
+int StackEmpty(Stack S){  //判断空栈
+         if(S.top==S.base)
+           return 1;
+           return 0;
+}
+
+void Push(Stack &S,SElemType e){//入栈
+         if(S.top-S.base >=S.stackSize){//栈满，加空间
+                   S.base=(SElemType *)realloc(S.base,(S.stackSize+INCREMENT)*sizeof(SElemType));
+                   if(!S.base)
+                            exit(OVERFLOW);   //存储分配失败
+                            S.top=S.base+S.stackSize;
+                            S.stackSize+=INCREMENT;
+         }
+         *S.top++=e;
+
+}
+
+int Pop(Stack &S,SElemType &e){//出栈
+         if(S.top==S.base)
+           return 0;
+           e=*--S.top;
+		return 1;
+}
+
+typedef struct{
+         int r;
+         int c;
+         int adr[2600][2600];
+}MazeType;   //迷宫类型
+
+MazeType maze;          //定义全局自定义变量迷宫maze
+MazeType maze1;
+PostType NextPos(PostType &curpos,int i){
+//探索下一位置并返回下一位置(cpos)的坐标
+         PostType cpos;
+         cpos=curpos;
+         switch(i){        //1.2.3分别表示右、下、左、上方向
+                   case 1 : cpos.r+=1; break;
+                   case 2 : cpos.c+=1; break;
+                   case 4 : cpos.c-=1; break;
+                   case 3 : cpos.r-=1; break;
+                   default: exit(0);
+         }
+         return cpos;
+}
+
+
+
+//遍历斑块并修改
+void MazePath(MazeType &maze,PostType start,int flag,int toflag){
+         Stack S;
+         PostType curpos;
+         SElemType e;
+         InitStack(S);
+         curpos=start; //设置"当前位置"为"入口位置"
+         //探索第一步
+         do{
+             if(maze.adr[curpos.r][curpos.c]==flag){//当前位置可以通过,
+                 maze.adr[curpos.r][curpos.c]=-1;//留下足迹
+                 af[curpos.r][curpos.c]=toflag;//标记所有需要修改的节点中的点
+                 e.seat=curpos;
+                 e.di=1;
+                 Push(S,e);              //加入路径
+                 curpos=NextPos(curpos,1); //下一位置是当前位置的东邻
+                   }
+                   else{        //当前位置不通
+                       if(!StackEmpty(S)){
+                           Pop(S,e);
+                            if(e.di <4){
+                                e.di++;//换下一个方向探索
+                                Push(S,e);
+                                curpos=NextPos(e.seat,e.di);//设定当前位置是该新方向上的相
+                                     }
+                            }
+                   }
+
+         }while(!StackEmpty(S));
+
+}
+
+
+
+//生成图像节点网络文件所需方法（重复方法名前加入net前缀）
+
+//获取斑块信息并序列化斑块
+void netMazePath(MazeType &maze,PostType start,int number,int flag){
+         int count_all=0; //记录当前斑块的所有点个数
+         Stack S;
+         PostType curpos;
+         SElemType e;
+         InitStack(S);
+         curpos=start; //设置"当前位置"为"入口位置"
+         //探索第一步
+         do{
+             if(maze.adr[curpos.r][curpos.c]==flag){//当前位置可以通过,
+                 count_all++;
+                 maze.adr[curpos.r][curpos.c]=number+flag_max;//留下足迹
+                 e.seat=curpos;
+                 e.di=1;
+                 Push(S,e);              //加入路径
+                 curpos=NextPos(curpos,1); //下一位置是当前位置的东邻
+                   }
+                   else{        //当前位置不通
+                       if(!StackEmpty(S)){
+                           Pop(S,e);
+                            if(e.di <4){
+                                e.di++;//换下一个方向探索
+                                Push(S,e);
+                                curpos=NextPos(e.seat,e.di);//设定当前位置是该新方向上的相
+                                     }
+                            }
+                   }
+
+         }while(!StackEmpty(S));
+         fprintf(fp5, "%d\n",count_all);//整合信息里的点个数
+
+}
+
+//计算总斑块数用
+void MazePath1(MazeType &maze,PostType start,int number,int flag){
+         int count_all=0; //记录当前斑块的所有点个数
+         Stack S;
+         PostType curpos;
+         SElemType e;
+         InitStack(S);
+         curpos=start; //设置"当前位置"为"入口位置"
+         //探索第一步
+         do{
+             if(maze.adr[curpos.r][curpos.c]==flag){//当前位置可以通过,
+                 count_all++;
+                 maze.adr[curpos.r][curpos.c]=number+flag_max;//留下足迹
+                 e.seat=curpos;
+                 e.di=1;
+                 Push(S,e);              //加入路径
+                 curpos=NextPos(curpos,1); //下一位置是当前位置的东邻
+                   }
+                   else{        //当前位置不通
+                       if(!StackEmpty(S)){
+                           Pop(S,e);
+                            if(e.di <4){
+                                e.di++;//换下一个方向探索
+                                Push(S,e);
+                                curpos=NextPos(e.seat,e.di);//设定当前位置是该新方向上的相
+                                     }
+                            }
+                   }
+
+         }while(!StackEmpty(S));
+
+}
+
+int if_adjacent(MazeType &maze,int x,int y,int number,int flag){
+        int ecount=0;
+        if(x+1<LINE){
+	if(maze.adr[x+1][y] != flag&&maze.adr[x+1][y] !=(number+flag)){
+           if(maze.adr[x+1][y]>flag_max+number){ //这表示的是下邻接，x表示的行值，adjacent_right应该与adjacent_below互换（这里互换了写入的1和2，而没互换数组名）
+             adjacent[flag-flag_max][maze.adr[x+1][y]-number-flag_max]++;
+             adjacent_right[flag-flag_max][maze.adr[x+1][y]-number-flag_max]++;
+             }
+           else{
+             adjacent[flag-flag_max][maze.adr[x+1][y]-flag_max]++;
+             adjacent_right[flag-flag_max][maze.adr[x+1][y]-flag_max]++;
+             }
+           ecount++;
+        }
+        }
+        if(y+1<SAMPLE){
+	if(maze.adr[x][y+1] != flag&&maze.adr[x][y+1] !=(number+flag)){
+            if(maze.adr[x][y+1]>flag_max+number){
+              adjacent[flag-flag_max][maze.adr[x][y+1]-number-flag_max]++;
+              }
+           else{
+              adjacent[flag-flag_max][maze.adr[x][y+1]-flag_max]++;
+              }
+           ecount++;
+        }
+      }
+      return ecount;
+}
+
+void AdjacentPath(MazeType &maze,PostType start,int number,int flag){
+         int count_edge = 0;
+         Stack S;
+         PostType curpos;
+         SElemType e;
+         InitStack(S);
+         curpos=start; //设置"当前位置"为"入口位置"
+         //探索第一步
+         do{
+             if(maze.adr[curpos.r][curpos.c]==flag){//当前位置可以通过,
+                 count_edge+=if_adjacent(maze,curpos.r,curpos.c,number,flag);
+                 maze.adr[curpos.r][curpos.c]=flag+number;//留下足迹
+                 e.seat=curpos;
+                 e.di=1;
+                 Push(S,e);              //加入路径
+                 curpos=NextPos(curpos,1); //下一位置是当前位置的东邻
+                   }
+                   else{        //当前位置不通
+                       if(!StackEmpty(S)){
+                           Pop(S,e);
+                            if(e.di <4){
+                                e.di++;//换下一个方向探索
+                                Push(S,e);
+                                curpos=NextPos(e.seat,e.di);//设定当前位置是该新方向上的相
+                                     }
+                            }
+                   }
+
+         }while(!StackEmpty(S));
+      fprintf(fp5, "%d\n",count_edge);
+     // sideNum+=count_edge;
+      for(int i=1;i<=number;i++){
+      if(adjacent[flag-flag_max][i]!=0){
+      if(adjacent_right[flag-flag_max][i]!=0){
+         fprintf(fp5, "%d,",flag-flag_max);
+         fprintf(fp5, "%d,",i);
+         fprintf(fp5, "%d,",2);
+         fprintf(fp5, "%d\n",adjacent_right[flag-flag_max][i]/2);
+        }
+      if(adjacent[flag-flag_max][i]-adjacent_right[flag-flag_max][i]>0) {
+         fprintf(fp5, "%d,",flag-flag_max);
+         fprintf(fp5, "%d,",i);
+         fprintf(fp5, "%d,",1);
+         fprintf(fp5, "%d\n",adjacent[flag-flag_max][i]/2-adjacent_right[flag-flag_max][i]/2);
+      } 
+
+      }
+   }
+
+}
+
+//计算总点数用
+void AdjacentPath1(MazeType &maze,PostType start,int number,int flag){
+         int count_edge = 0;
+         Stack S;
+         PostType curpos;
+         SElemType e;
+         InitStack(S);
+         curpos=start; //设置"当前位置"为"入口位置"
+         //探索第一步
+         do{
+             if(maze.adr[curpos.r][curpos.c]==flag){//当前位置可以通过,
+                 count_edge+=if_adjacent(maze,curpos.r,curpos.c,number,flag);
+                 maze.adr[curpos.r][curpos.c]=flag+number;//留下足迹
+                 e.seat=curpos;
+                 e.di=1;
+                 Push(S,e);              //加入路径
+                 curpos=NextPos(curpos,1); //下一位置是当前位置的东邻
+                   }
+                   else{        //当前位置不通
+                       if(!StackEmpty(S)){
+                           Pop(S,e);
+                            if(e.di <4){
+                                e.di++;//换下一个方向探索
+                                Push(S,e);
+                                curpos=NextPos(e.seat,e.di);//设定当前位置是该新方向上的相
+                                     }
+                            }
+                   }
+
+         }while(!StackEmpty(S));
+      sideNum+=count_edge;
+
+}
+
+//---------------------------------------------------------------------------
+#pragma package(smart_init)
+#pragma resource "*.dfm"
+TForm1 *Form1;
+//---------------------------------------------------------------------------
+__fastcall TForm1::TForm1(TComponent* Owner)
+        : TForm(Owner)
+{
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button1Click(TObject *Sender)
+{
+          if(OpenDialog1->Execute())
+                name=OpenDialog1->FileName;
+}
+//---------------------------------------------------------------------------
+void __fastcall TForm1::Button2Click(TObject *Sender)
+{
+          if(OpenDialog2->Execute()){
+                netname=OpenDialog2->FileName;
+                }
+}
+//---------------------------------------------------------------------------
+//---------------------Button3实现输出修改后的图像文件
+void __fastcall TForm1::Button3Click(TObject *Sender)
+{
+        if(file_type==1){
+         //初始化二维数组函数
+        memset(node,-1,sizeof(node));
+        memset(af,-1,sizeof(af));
+
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        FILE *fp;
+        unsigned char idata;//用来读取本行数据
+        maze.r=SAMPLE;maze.c=LINE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)%SAMPLE][(count-1)/SAMPLE]=idata;
+
+        }
+        fclose(fp);
+        }
+
+        //检验原图数据是否正确读取
+        /*FILE *ff;
+        ff = fopen("d://ff.txt","w+");
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        fprintf(ff,"%d ",maze.adr[j][i]);
+                }
+                fprintf(ff,"\n");
+        } */
+
+        //读取节点网络文件中的数据
+
+        FILE *fpc;
+        //FILE *fpt;
+        //fpt = fopen("d://tt.txt","w+");
+        fpc = fopen(netname.c_str(),"r+");
+        int IDnums,relnums,bnums;//节点总数,关系数，总边数
+        int pro,ID,tolnums;//属性个数（2个），节点ID，当前节点总点数。（其中nowclass和起始点位置spoint在代码头已定义）
+        fscanf(fpc,"%d%d%d",&IDnums,&relnums,&bnums);
+        //fprintf(fpt,"%d %d %d\n",IDnums,relnums,bnums);
+        for(int i=0;i<IDnums;i++){
+                fscanf(fpc,"%d%d%d%d%d",&pro,&toClass,&spoint,&ID,&tolnums);
+                node[(spoint-1)%SAMPLE][(spoint-1)/SAMPLE]=toClass;
+                //fprintf(fpt,"%d %d %d %d %d\n",pro,toClass,spoint,ID,tolnums);
+        }
+        //fprintf(fpt,"%d %d\n",maze.adr[65][0],node[65][0]);
+        fclose(fpc);
+
+
+        //找出节点类型改变的斑块
+
+        PostType start;
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                /*if(i*SAMPLE+j==66)
+                {
+                fprintf(fpt," %d",af[65][0]);
+                   int a;
+                   a=65;
+                } */
+                        if(node[j][i] != -1){     //只寻找并比较一个节点的第一个点
+                        if(maze.adr[j][i]!=node[j][i]){
+                                start.r=j;
+                                start.c=i;
+                                toClass=node[j][i];
+                                nowClass=maze.adr[j][i];
+                                MazePath(maze,start,nowClass,toClass);//修改当前节点
+                                //Memo1->Lines->Append(i*SAMPLE+j);
+                                }
+                        }
+                }
+        }
+
+
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(af[j][i]!=-1 && maze.adr[j][i]==-1)
+                        maze.adr[j][i]=af[j][i];
+                }
+        }     
+
+        //fprintf(fpt,"%d %d %d%d%d\n",maze.adr[43][0],node[43][0],maze.adr[44][0],maze.adr[45][0],maze.adr[46][0]);
+        //fclose(fpt);
+        //输出矢量二进制文件
+        if(Edit3->Text == "")
+        {
+                MessageBox(NULL,"请选择输出文件路径！", "Error",MB_ICONERROR);
+        }
+        FILE *fptwo;
+        char a=1,b=2,c=3,d=4,e=0;
+        fptwo=fopen(Edit3->Text.c_str(),"wb");//打开文件
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(maze.adr[j][i]==1)
+                        fwrite(&a,1,1,fptwo);
+                        if(maze.adr[j][i]==2)
+                        fwrite(&b,1,1,fptwo);
+                        if(maze.adr[j][i]==3)
+                        fwrite(&c,1,1,fptwo);
+                        if(maze.adr[j][i]==4)
+                        fwrite(&d,1,1,fptwo);
+                        if(maze.adr[j][i]==0)
+                        fwrite(&e,1,1,fptwo);
+                }
+        }
+        fclose(fptwo);
+        MessageBox(NULL,"成功生成图像文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+    }
+
+
+    if(file_type==2){
+         //初始化二维数组函数
+        memset(node,-1,sizeof(node));
+        memset(af,-1,sizeof(af));
+
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        FILE *fp;
+        unsigned short idata;//用来读取本行数据
+        maze.r=SAMPLE;maze.c=LINE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)%SAMPLE][(count-1)/SAMPLE]=idata;
+
+        }
+        fclose(fp);
+        }
+
+        //检验原图数据是否正确读取
+        /*FILE *ff;
+        ff = fopen("d://ff.txt","w+");
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        fprintf(ff,"%d ",maze.adr[j][i]);
+                }
+                fprintf(ff,"\n");
+        } */
+
+        //读取节点网络文件中的数据
+
+        FILE *fpc;
+        //FILE *fpt;
+        //fpt = fopen("d://tt.txt","w+");
+        fpc = fopen(netname.c_str(),"r+");
+        int IDnums,relnums,bnums;//节点总数,关系数，总边数
+        int pro,ID,tolnums;//属性个数（2个），节点ID，当前节点总点数。（其中nowclass和起始点位置spoint在代码头已定义）
+        fscanf(fpc,"%d%d%d",&IDnums,&relnums,&bnums);
+        //fprintf(fpt,"%d %d %d\n",IDnums,relnums,bnums);
+        for(int i=0;i<IDnums;i++){
+                fscanf(fpc,"%d%d%d%d%d",&pro,&toClass,&spoint,&ID,&tolnums);
+                node[(spoint-1)%SAMPLE][(spoint-1)/SAMPLE]=toClass;
+                //fprintf(fpt,"%d %d %d %d %d\n",pro,toClass,spoint,ID,tolnums);
+        }
+        //fprintf(fpt,"%d %d\n",maze.adr[65][0],node[65][0]);
+        fclose(fpc);
+
+
+        //找出节点类型改变的斑块
+
+        PostType start;
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                /*if(i*SAMPLE+j==66)
+                {
+                fprintf(fpt," %d",af[65][0]);
+                   int a;
+                   a=65;
+                } */
+                        if(node[j][i] != -1){     //只寻找并比较一个节点的第一个点
+                        if(maze.adr[j][i]!=node[j][i]){
+                                start.r=j;
+                                start.c=i;
+                                toClass=node[j][i];
+                                nowClass=maze.adr[j][i];
+                                MazePath(maze,start,nowClass,toClass);//修改当前节点
+                                //Memo1->Lines->Append(i*SAMPLE+j);
+                                }
+                        }
+                }
+        }
+
+
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(af[j][i]!=-1 && maze.adr[j][i]==-1)
+                        maze.adr[j][i]=af[j][i];
+                }
+        }     
+
+        //fprintf(fpt,"%d %d %d%d%d\n",maze.adr[43][0],node[43][0],maze.adr[44][0],maze.adr[45][0],maze.adr[46][0]);
+        //fclose(fpt);
+        //输出矢量二进制文件
+        if(Edit3->Text == "")
+        {
+                MessageBox(NULL,"请选择输出文件路径！", "Error",MB_ICONERROR);
+        }
+        FILE *fptwo;
+        char a=1,b=2,c=3,d=4,e=0;
+        fptwo=fopen(Edit3->Text.c_str(),"wb");//打开文件
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(maze.adr[j][i]==1)
+                        fwrite(&a,1,1,fptwo);
+                        if(maze.adr[j][i]==2)
+                        fwrite(&b,1,1,fptwo);
+                        if(maze.adr[j][i]==3)
+                        fwrite(&c,1,1,fptwo);
+                        if(maze.adr[j][i]==4)
+                        fwrite(&d,1,1,fptwo);
+                        if(maze.adr[j][i]==0)
+                        fwrite(&e,1,1,fptwo);
+                }
+        }
+        fclose(fptwo);
+        MessageBox(NULL,"成功生成图像文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+    }
+
+    if(file_type==4){
+         //初始化二维数组函数
+        memset(node,-1,sizeof(node));
+        memset(af,-1,sizeof(af));
+
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        FILE *fp;
+        unsigned int idata;//用来读取本行数据
+        maze.r=SAMPLE;maze.c=LINE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)%SAMPLE][(count-1)/SAMPLE]=idata;
+
+        }
+        fclose(fp);
+        }
+
+        //检验原图数据是否正确读取
+        /*FILE *ff;
+        ff = fopen("d://ff.txt","w+");
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        fprintf(ff,"%d ",maze.adr[j][i]);
+                }
+                fprintf(ff,"\n");
+        } */
+
+        //读取节点网络文件中的数据
+
+        FILE *fpc;
+        //FILE *fpt;
+        //fpt = fopen("d://tt.txt","w+");
+        fpc = fopen(netname.c_str(),"r+");
+        int IDnums,relnums,bnums;//节点总数,关系数，总边数
+        int pro,ID,tolnums;//属性个数（2个），节点ID，当前节点总点数。（其中nowclass和起始点位置spoint在代码头已定义）
+        fscanf(fpc,"%d%d%d",&IDnums,&relnums,&bnums);
+        //fprintf(fpt,"%d %d %d\n",IDnums,relnums,bnums);
+        for(int i=0;i<IDnums;i++){
+                fscanf(fpc,"%d%d%d%d%d",&pro,&toClass,&spoint,&ID,&tolnums);
+                node[(spoint-1)%SAMPLE][(spoint-1)/SAMPLE]=toClass;
+                //fprintf(fpt,"%d %d %d %d %d\n",pro,toClass,spoint,ID,tolnums);
+        }
+        //fprintf(fpt,"%d %d\n",maze.adr[65][0],node[65][0]);
+        fclose(fpc);
+
+
+        //找出节点类型改变的斑块
+
+        PostType start;
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                /*if(i*SAMPLE+j==66)
+                {
+                fprintf(fpt," %d",af[65][0]);
+                   int a;
+                   a=65;
+                } */
+                        if(node[j][i] != -1){     //只寻找并比较一个节点的第一个点
+                        if(maze.adr[j][i]!=node[j][i]){
+                                start.r=j;
+                                start.c=i;
+                                toClass=node[j][i];
+                                nowClass=maze.adr[j][i];
+                                MazePath(maze,start,nowClass,toClass);//修改当前节点
+                                //Memo1->Lines->Append(i*SAMPLE+j);
+                                }
+                        }
+                }
+        }
+
+
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(af[j][i]!=-1 && maze.adr[j][i]==-1)
+                        maze.adr[j][i]=af[j][i];
+                }
+        }     
+
+        //fprintf(fpt,"%d %d %d%d%d\n",maze.adr[43][0],node[43][0],maze.adr[44][0],maze.adr[45][0],maze.adr[46][0]);
+        //fclose(fpt);
+        //输出矢量二进制文件
+        if(Edit3->Text == "")
+        {
+                MessageBox(NULL,"请选择输出文件路径！", "Error",MB_ICONERROR);
+        }
+        FILE *fptwo;
+        char a=1,b=2,c=3,d=4,e=0;
+        fptwo=fopen(Edit3->Text.c_str(),"wb");//打开文件
+        for(int i=0;i<LINE;i++){
+                for(int j=0;j<SAMPLE;j++){
+                        if(maze.adr[j][i]==1)
+                        fwrite(&a,1,1,fptwo);
+                        if(maze.adr[j][i]==2)
+                        fwrite(&b,1,1,fptwo);
+                        if(maze.adr[j][i]==3)
+                        fwrite(&c,1,1,fptwo);
+                        if(maze.adr[j][i]==4)
+                        fwrite(&d,1,1,fptwo);
+                        if(maze.adr[j][i]==0)
+                        fwrite(&e,1,1,fptwo);
+                }
+        }
+        fclose(fptwo);
+        MessageBox(NULL,"成功生成图像文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+    }
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Edit1Change(TObject *Sender)
+{
+        if(Edit1->Text == ""){
+                LINE = 0;
+        }
+        else{
+        LINE = StrToInt(Edit1->Text);
+        }
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Edit2Change(TObject *Sender)
+{
+        if(Edit2->Text == ""){
+                SAMPLE = 0;
+        }
+        else{
+        SAMPLE = StrToInt(Edit2->Text);
+        }
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button4Click(TObject *Sender)
+{
+        if(OpenDialog3->Execute()){
+                outname=OpenDialog3->FileName;
+                Edit3->Text = outname;
+                }
+}
+//---------------------------------------------------------------------------
+void __fastcall TForm1::Button5Click(TObject *Sender)
+{
+        if(OpenDialog4->Execute()){
+                netoutname=OpenDialog4->FileName;
+                Edit4->Text = netoutname;
+                }
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button6Click(TObject *Sender)
+{
+     //一字节读取 unsigned char idata;
+     if(file_type==1){
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        PostType start;
+        int flag;    //记录当前斑块的类型
+        FILE *fp;
+        unsigned char idata;//用来读取本行数据
+        maze.r=LINE;maze.c=SAMPLE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;
+                maze1.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;//计算总斑块数和总点数用
+                if(flag_max<idata)
+                        flag_max=idata;
+
+
+        }
+       fclose(fp);
+    }
+    //生成总斑块数
+    int number1=0;//记录当前斑块的序号
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]<=flag_max && maze1.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  MazePath1(maze1,start,number1,flag);//此方法后maze1被序列化 (5-107)
+			}
+		    }
+		 }
+    //生成总点数
+    int seq1=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]==seq1+flag_max&& maze1.adr[i][j]!=flag_max){
+             if(seq1<=number1){
+                  seq1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath1(maze1,start,number1,flag);
+                           }
+			}
+		    }
+		 }
+
+
+    //遍历斑块，输出斑块信息并序列化斑块
+     fp5=fopen(Edit4->Text.c_str(),"w");
+     fprintf(fp5, "%d\t",number1); //节点数
+     fprintf(fp5, "%d\t",2);  //关系数
+     fprintf(fp5, "%d\n",sideNum);//边数
+     int number = 0;
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]<=flag_max && maze.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number++;
+                  fprintf(fp5, "%d ",2);
+                  fprintf(fp5, "%d ",maze.adr[i][j]);//class值
+                  fprintf(fp5, "%d ",i* SAMPLE+j+1);//起始点号
+                  fprintf(fp5, "%d ",number);//斑块id ，点个数信息的记录在MazePath方法里
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  netMazePath(maze,start,number,flag);//此方法后maze被序列化 (5-107)
+			}
+		    }
+		 }
+    // 关系信息
+     fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\t",1);fprintf(fp5, "%d\t",0); fprintf(fp5, "%d\n",0);
+     fprintf(fp5, "%d\t",2); fprintf(fp5, "%d\t",0);fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\n",0);
+     //提取斑块间的邻接路径
+    int seq=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]==seq+flag_max&& maze.adr[i][j]!=flag_max){
+             if(seq<=number){
+                  fprintf(fp5, "%d,",-1);
+                  fprintf(fp5, "%d,",seq);
+                  seq++;
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath(maze,start,number,flag);
+                           }
+			}
+		    }
+		 }
+
+            fclose(fp5);
+            MessageBox(NULL,"成功生成节点网络文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+          }
+          
+     //二字节读取 unsigned short idata;
+     if(file_type==2){
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        PostType start;
+        int flag;    //记录当前斑块的类型
+        FILE *fp;
+        unsigned short idata;//用来读取本行数据
+        maze.r=LINE;maze.c=SAMPLE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;
+                maze1.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;//计算总斑块数和总点数用
+                if(flag_max<idata)
+                        flag_max=idata;
+
+
+        }
+       fclose(fp);
+    }
+    //生成总斑块数
+    int number1=0;//记录当前斑块的序号
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]<=flag_max && maze1.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  MazePath1(maze1,start,number1,flag);//此方法后maze1被序列化 (5-107)
+			}
+		    }
+		 }
+    //生成总点数
+    int seq1=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]==seq1+flag_max&& maze1.adr[i][j]!=flag_max){
+             if(seq1<=number1){
+                  seq1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath1(maze1,start,number1,flag);
+                           }
+			}
+		    }
+		 }
+
+
+    //遍历斑块，输出斑块信息并序列化斑块
+     fp5=fopen(Edit4->Text.c_str(),"w");
+     fprintf(fp5, "%d\t",number1); //节点数
+     fprintf(fp5, "%d\t",2);  //关系数
+     fprintf(fp5, "%d\n",sideNum);//边数
+     int number = 0;
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]<=flag_max && maze.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number++;
+                  fprintf(fp5, "%d ",2);
+                  fprintf(fp5, "%d ",maze.adr[i][j]);//class值
+                  fprintf(fp5, "%d ",i* SAMPLE+j+1);//起始点号
+                  fprintf(fp5, "%d ",number);//斑块id ，点个数信息的记录在MazePath方法里
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  netMazePath(maze,start,number,flag);//此方法后maze被序列化 (5-107)
+			}
+		    }
+		 }
+    // 关系信息
+     fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\t",1);fprintf(fp5, "%d\t",0); fprintf(fp5, "%d\n",0);
+     fprintf(fp5, "%d\t",2); fprintf(fp5, "%d\t",0);fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\n",0);
+     //提取斑块间的邻接路径
+    int seq=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]==seq+flag_max&& maze.adr[i][j]!=flag_max){
+             if(seq<=number){
+                  fprintf(fp5, "%d,",-1);
+                  fprintf(fp5, "%d,",seq);
+                  seq++;
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath(maze,start,number,flag);
+                           }
+			}
+		    }
+		 }
+
+            fclose(fp5);
+            MessageBox(NULL,"成功生成节点网络文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+          }
+
+     //四字节读取 unsigned int idata;
+     if(file_type==4){
+        //读取所有点至maze数组
+        if(LINE <= 0){
+                MessageBox(NULL,"行值必须是正整数！请重新输入行值。", "Error",MB_ICONERROR);
+        }
+        if(SAMPLE <= 0){
+                MessageBox(NULL,"列值必须是正整数！请重新输入列值。", "Error",MB_ICONERROR);
+        }
+        PostType start;
+        int flag;    //记录当前斑块的类型
+        FILE *fp;
+        unsigned int idata;//用来读取本行数据
+        maze.r=LINE;maze.c=SAMPLE;
+        int count=0;
+        fp=fopen(name.c_str(),"rb");//打开文件
+        if(fp!=NULL)
+        {
+        while(!feof(fp))
+        {
+                fread(&idata,file_type,1,fp);//读取数据储存在idata[]中
+                count++;
+                maze.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;
+                maze1.adr[(count-1)/SAMPLE][(count-1)%SAMPLE]=idata;//计算总斑块数和总点数用
+                if(flag_max<idata)
+                        flag_max=idata;
+
+
+        }
+       fclose(fp);
+    }
+    //生成总斑块数
+    int number1=0;//记录当前斑块的序号
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]<=flag_max && maze1.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  MazePath1(maze1,start,number1,flag);//此方法后maze1被序列化 (5-107)
+			}
+		    }
+		 }
+    //生成总点数
+    int seq1=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze1.adr[i][j]==seq1+flag_max&& maze1.adr[i][j]!=flag_max){
+             if(seq1<=number1){
+                  seq1++;
+                  flag=maze1.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath1(maze1,start,number1,flag);
+                           }
+			}
+		    }
+		 }
+
+
+    //遍历斑块，输出斑块信息并序列化斑块
+     fp5=fopen(Edit4->Text.c_str(),"w");
+     fprintf(fp5, "%d\t",number1); //节点数
+     fprintf(fp5, "%d\t",2);  //关系数
+     fprintf(fp5, "%d\n",sideNum);//边数
+     int number = 0;
+    for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]<=flag_max && maze.adr[i][j]!=0){ //得到的数据有问题 1.数据中有0 ；2. 总共103个斑块？
+                  number++;
+                  fprintf(fp5, "%d ",2);
+                  fprintf(fp5, "%d ",maze.adr[i][j]);//class值
+                  fprintf(fp5, "%d ",i* SAMPLE+j+1);//起始点号
+                  fprintf(fp5, "%d ",number);//斑块id ，点个数信息的记录在MazePath方法里
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  netMazePath(maze,start,number,flag);//此方法后maze被序列化 (5-107)
+			}
+		    }
+		 }
+    // 关系信息
+     fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\t",1);fprintf(fp5, "%d\t",0); fprintf(fp5, "%d\n",0);
+     fprintf(fp5, "%d\t",2); fprintf(fp5, "%d\t",0);fprintf(fp5, "%d\t",1); fprintf(fp5, "%d\n",0);
+     //提取斑块间的邻接路径
+    int seq=1;
+     for(int i=0;i<LINE;i++){
+          for(int j=0;j<SAMPLE;j++){
+            if(maze.adr[i][j]==seq+flag_max&& maze.adr[i][j]!=flag_max){
+             if(seq<=number){
+                  fprintf(fp5, "%d,",-1);
+                  fprintf(fp5, "%d,",seq);
+                  seq++;
+                  flag=maze.adr[i][j];
+	          start.r=i;start.c=j;
+                  AdjacentPath(maze,start,number,flag);
+                           }
+			}
+		    }
+		 }
+
+            fclose(fp5);
+            MessageBox(NULL,"成功生成节点网络文件！请在对应文件查看。", "Message",MB_ICONASTERISK);
+          }
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Edit5Change(TObject *Sender)
+{
+        if(Edit5->Text == ""){
+                file_type = 1;
+        }
+        else{
+        file_type = StrToInt(Edit5->Text);
+        }
+}
+//---------------------------------------------------------------------------
+

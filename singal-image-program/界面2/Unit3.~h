@@ -1,0 +1,153 @@
+//---------------------------------------------------------------------------
+
+#ifndef Unit3H
+#define Unit3H
+//---------------------------------------------------------------------------
+#include <Classes.hpp>
+#include <Controls.hpp>
+#include <StdCtrls.hpp>
+#include <Forms.hpp>
+#include <ExtCtrls.hpp>
+#include <stdlib.h>
+#include <stdio.h>
+#include <Menus.hpp>
+#include<vector>
+#include<stack>
+using namespace std;
+//---------------------------------------------------------------------------
+class TForm3 : public TForm
+{
+__published:	// IDE-managed Components
+        TScrollBox *ScrollBox1;
+        TImage *Image1;
+        TMemo *Memo1;
+        void __fastcall Image1MouseDown(TObject *Sender,
+          TMouseButton Button, TShiftState Shift, int X, int Y);
+        void __fastcall Image1MouseUp(TObject *Sender, TMouseButton Button,
+          TShiftState Shift, int X, int Y);
+        void __fastcall Image1MouseMove(TObject *Sender, TShiftState Shift,
+          int X, int Y);
+        int __fastcall pnpoly(float test_x,float test_y,int nvert);
+        void __fastcall back_to_photo() ;
+        void __fastcall select_to_red();
+        void __fastcall go_back();
+        void __fastcall write_point_to_file(String file_address);
+private:	// User declarations
+public:		// User declarations
+        __fastcall TForm3(TComponent* Owner);
+        int HANG,LIE;
+        int X_BODUAN;
+        int D_YANGBEN;
+        String MODEL;
+        int amount_of_yb;
+        unsigned short int t_min;
+        String ADDRESS;
+        POINT mouse_start,mouse_end,mouse_select,mouse_eye;
+        int mouse_is_down;
+        int select_time;
+        vector<POINT>select_point;
+        vector<POINT>lucky_point;
+        typedef struct
+        {
+                unsigned short int data[5];
+                int type;
+        }point;
+        point** picture;
+        typedef struct
+        {
+                int x_max;
+                int y_max;
+                int x_min;
+                int y_min;
+        }Range;
+        stack<Range>rg;
+        void show_the_picture()
+        {             
+                picture = (point **)malloc(sizeof(point*)*7000);
+                for(int i=0 ; i<7000 ; i++)
+                picture[i] = (point *)malloc((sizeof(unsigned short int)*13 + sizeof(int)*2)*7000);
+                Image1->Height = HANG;
+                Image1->Width = LIE;
+                FILE *fp;
+                fp = fopen(ADDRESS.c_str(),"rb");
+                unsigned short int maxx = 0;
+                unsigned short int minn = 0x3f3f3f3f;
+                unsigned short int dat;
+                int p_x = 0;
+                int p_y = 0;
+                int pp = 0;
+             fseek (fp, 0, SEEK_END);   ///将文件指针移动文件结尾
+             long long size=ftell (fp); ///求出当前文件指针距离文件开始的字节数
+             fseek(fp, 0, SEEK_SET);
+             long long byte_size = size/(HANG*LIE*X_BODUAN);
+            // return ;
+                while(!feof(fp))
+                {
+                        fread(&dat,byte_size,1,fp);
+                        if(dat>maxx) maxx = dat;
+                        if(dat<minn) minn = dat;
+                        picture[p_x][p_y].data[pp] = dat;
+                        //三种不同图片格式
+                                if(MODEL.c_str()[0]=='1')
+                                {
+                                        pp++;
+                                        if(pp == X_BODUAN)
+                                        {
+                                                p_y++;
+                                                pp = 0;
+                                        }
+                                        if(p_y == LIE)
+                                        {
+                                                p_x++;
+                                                p_y = 0;
+                                        }
+                                }
+                                else if(MODEL.c_str()[0]=='2')
+                                {
+                                        p_y++;
+                                        if(p_y==LIE)
+                                        {
+                                                p_x++;
+                                                p_y=0;
+                                        }
+                                        if(p_x==HANG)
+                                        {
+                                                p_x=0;
+                                                p_y=0;
+                                                pp++;
+                                        }
+                                }
+                                else
+                                {
+                                        p_y++;
+                                        if(p_y==LIE)
+                                        {
+                                                pp++;
+                                                p_y=0;
+                                        }
+                                        if(pp==X_BODUAN)
+                                        {
+                                                p_x++;
+                                                pp=0;
+                                        }
+                                }
+                }
+                if(maxx<255)  t_min =  1;
+                else          t_min = (unsigned short int)(maxx/255);
+                for(int i=0 ; i<HANG ; i++)
+                {
+                        for(int j=0 ; j<LIE ; j++)
+                        {
+                                Image1->Canvas->Pixels[j][i]
+                                =Graphics::TColor(RGB(picture[i][j].data[0]/t_min,picture[i][j].data[1]/t_min,picture[i][j].data[2]/t_min));
+                        }
+                }
+                Memo1->Lines->Append(maxx);
+                Memo1->Lines->Append(t_min);        //这两句不要删！   
+                fclose(fp);
+        }
+};
+//---------------------------------------------------------------------------
+extern PACKAGE TForm3 *Form3;
+//---------------------------------------------------------------------------
+#endif
